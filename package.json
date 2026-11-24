@@ -1,0 +1,38 @@
+{
+  "name": "dsh-side-terminal",
+  "version": "1.4.0",
+  "private": false,
+  "type": "module",
+  "description": "Take over the sidebar terminals of a DSH session: read screen output and send input with dangerous-command confirmation, plus the 终端模式 agent preset.",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./guard": "./guard.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "guard.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  }
+}

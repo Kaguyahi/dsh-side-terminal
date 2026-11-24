@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Side Terminal Control",
+    "description": "Model-facing tools that list, read, and send input to the sidebar terminals of the current session, with dangerous-command confirmation."
+  }
+}
