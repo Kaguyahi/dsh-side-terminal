@@ -24,39 +24,64 @@
 
 ## 📦 安装
 
-### 方式一：本地目录安装（开发/私有）
+### 方式一：pnpm dsh 命令行安装（推荐）
 
-1. 克隆本仓库到本地：
-
-```bash
-git clone https://github.com/<你的用户名>/dsh-side-terminal.git
-cd dsh-side-terminal
-```
-
-2. 在 DSH 的 Web GUI 中打开 **设置 → 插件**，或通过 CLI 安装：
+DSH 的 `plugin` 命令直接转发给 pnpm，因此 **所有 pnpm 安装语法都可用**：
 
 ```bash
-# 通过插件管理器安装本地目录（link 模式）
-dsh --profile <你的profile> plugin install link:/path/to/dsh-side-terminal
+# 1. 从 GitHub 仓库安装（最常用）
+dsh plugin --profile web add github:<你的用户名>/dsh-side-terminal
+
+# 2. 从 npm 安装
+dsh plugin --profile web add dsh-side-terminal
+
+# 3. 从本地目录安装（开发调试，link 模式）
+dsh plugin --profile web add link:/path/to/dsh-side-terminal
+
+# 4. 本地相对路径
+cd /path/to && dsh plugin --profile web add file:../dsh-side-terminal
 ```
 
-> 本地链接安装后修改源码，重装即可生效（插件管理器会重新扫描 bundle）。
+> 说明：
+> - `<你的profile>` 换成你的 profile 名（如 `web`、`tui` 等）；`dsh <profile> plugin ...` 是简写
+> - 若 pnpm 版本低于 9.4，`github:` 协议请用 `https://github.com/<用户名>/dsh-side-terminal.git`
+> - 安装完成后 pnpm 会写入 profile 的 `package.json` 并激活 bundle
 
-### 方式二：GitHub 直接安装
+### 方式二：Web GUI 安装
 
-DSH 插件市场/插件管理器支持从 GitHub 仓库直接安装：
+在 DSH 的 Web GUI 中打开 **设置 → 插件**，在插件管理页面输入：
 
 ```
 github:<你的用户名>/dsh-side-terminal
 ```
 
-在 **设置 → 插件 → 已安装** 页面输入上述地址即可。
+点击安装即可。
+
+### 方式三：手动编辑 profile
+
+在 profile 目录（`~/.dsh/profiles/<profile>/`）的 `package.json` 中：
+
+```json
+{
+  "dependencies": {
+    "dsh-side-terminal": "github:<你的用户名>/dsh-side-terminal"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": ["dsh-side-terminal"]
+    }
+  }
+}
+```
+
+然后运行 `dsh plugin --profile <profile> install` 完成安装。
 
 ### 安装后验证
 
-1. 重启 DSH（`preset-terminal` 行的 agent 预设内部插件树不受 HMR 管理，需重启生效）
+1. **重启 DSH**（`preset-terminal` 行的 agent 预设内部插件树不受 HMR 管理，需重启进程生效；只刷新浏览器页面不够）
 2. 打开一个会话，让模型执行 `side_terminal_list`，应返回终端列表（或 `No sidebar terminals`）
-3. 在 **设置 → 插件** 中应看到「Side Terminal Control」条目
+3. 新建会话时预设选择器中出现 **【终端模式】**
+4. 在 **设置 → 插件** 中应看到「Side Terminal Control」条目
 
 ---
 

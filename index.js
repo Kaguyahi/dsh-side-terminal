@@ -287,6 +287,35 @@ async function writeToPty(browserTerminal, data) {
   await handle.write(data)
 }
 
+/**
+ * Resolve the terminal a write without an explicit terminal_id targets:
+ * 1. A retained terminal whose title is the model's own label (terminal
+ *    mode opens these) — keeps one stable shell across calls.
+ * 2. Any running terminal, preferring the oldest (the user's main one).
+ * 3. A freshly opened model terminal when the session has none running.
+ */
+async function resolveDefaultTerminal(ctx, agent, signal) {
+  const result = await terminalCall(ctx, 'list', { sessionId: agent.id }, signal)
+  const infos = Array.isArray(result) ? result : []
+  const running = infos.filter(info => info.state === 'running')
+  const modelOwned = running.find(info => typeof info.title === 'string' && info.title.startsWith('终端模式'))
+  if (modelOwned !== undefined) return modelOwned.id
+  if (running.length > 0) return running[0].id
+  const cols = 80
+  const rows = 24
+  const id = `model-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const created = await terminalCall(ctx, 'create', {
+    agentId: agent.id,
+    request: { id, cols, rows },
+  }, signal)
+  try {
+    await terminalCall(ctx, 'rename', { agentId: agent.id, id, title: '终端模式' }, signal)
+  } catch {
+    // Renaming is cosmetic; a fresh terminal still works without it.
+  }
+  return created.id
+}
+
 // ---------------------------------------------------------------------------
 // Screen rendering
 // ---------------------------------------------------------------------------
@@ -397,12 +426,15 @@ export function apply(ctx, config = {}) {
   ctx.systemPrompt.section({
     name: 'tool:side-terminal',
     order: 500,
-    text: 'Sidebar terminal tools drive the terminals the user opened in the sidebar of this session. '
-      + 'Prefer them only when the user explicitly asked to operate that specific terminal; '
-      + 'prefer the bash tool for ordinary commands. List terminals with side_terminal_list, '
-      + 'read their visible screen with side_terminal_read, and send input with side_terminal_write '
-      + '(Enter is submitted automatically). Dangerous commands require user confirmation; never try to '
-      + 'bypass it by splitting, encoding, or quoting a command.',
+    text: 'Sidebar terminal tools drive the terminals in the sidebar of this session. '
+      + 'In terminal mode they are the ONLY shell surface: every shell command must run '
+      + 'through side_terminal_write (which opens or reuses a sidebar terminal automatically). '
+      + 'When a shell tool like bash is available, prefer it for ordinary one-shot commands '
+      + 'and use the sidebar tools only when the user explicitly asked to operate that terminal. '
+      + 'List terminals with side_terminal_list, read their visible screen with side_terminal_read, '
+      + 'and send input with side_terminal_write (Enter is submitted automatically). '
+      + 'Dangerous commands require user confirmation; never try to bypass it by splitting, '
+      + 'encoding, or quoting a command.',
   })
 
   // ---- list ---------------------------------------------------------------
@@ -457,9 +489,9 @@ export function apply(ctx, config = {}) {
   // ---- read ---------------------------------------------------------------
   ctx.tools.register(tool({
     name: 'side_terminal_read',
-    description: 'Read the current visible screen of one sidebar terminal of this session. Returns the latest rendered output as plain text, including the prompt line when the shell is idle. Reading never disturbs the terminal and never takes input control away from the sidebar view.',
+    description: 'Read the current visible screen of one sidebar terminal of this session. Omit terminal_id to read the model\'s own terminal or the first running one. Returns the latest rendered output as plain text, including the prompt line when the shell is idle. Reading never disturbs the terminal and never takes input control away from the sidebar view.',
     parameters: {
-      terminal_id: { type: 'string', required: true, description: 'Terminal id returned by side_terminal_list.' },
+      terminal_id: { type: 'string', description: 'Terminal id returned by side_terminal_list. Omit to read the model\'s own terminal or the first running one.' },
     },
     outputSchema: {
       type: 'object',
@@ -485,7 +517,20 @@ export function apply(ctx, config = {}) {
     },
     async execute(args, exec) {
       const agent = requireAgent(exec)
-      const id = expectString(args.terminal_id, 'terminal_id')
+      let id
+      if (typeof args.terminal_id === 'string' && args.terminal_id.length > 0) {
+        id = args.terminal_id
+      } else {
+        // Without an explicit id, prefer the model's own terminal, then any
+        // running one. Read never creates a terminal.
+        const result = await terminalCall(ctx, 'list', { sessionId: agent.id }, exec.signal)
+        const infos = Array.isArray(result) ? result : []
+        const running = infos.filter(info => info.state === 'running')
+        const modelOwned = running.find(info => typeof info.title === 'string' && info.title.startsWith('终端模式'))
+        const chosen = modelOwned ?? running[0]
+        if (chosen === undefined) throw new Error('side_terminal_read: no running sidebar terminal; open one with side_terminal_open first')
+        id = chosen.id
+      }
       if (id.length === 0) throw new Error('side_terminal_read: terminal_id must be a non-empty string')
       // Non-invasive path: snapshot the live xterm screen in-process without
       // opening an attach stream, so the sidebar keeps input control.
@@ -536,9 +581,9 @@ export function apply(ctx, config = {}) {
   // ---- write --------------------------------------------------------------
   ctx.tools.register(tool({
     name: 'side_terminal_write',
-    description: 'Send input to one sidebar terminal of this session, exactly as if typed into it. The plugin submits Enter automatically when the input does not already end with "\\r". Dangerous commands (destructive deletes, privilege elevation, shutdown, force pushes, remote-code pipes, …) ask the user for confirmation first and are rejected unless confirmed. Writing never takes input control away from the sidebar view.',
+    description: 'Send input to one sidebar terminal of this session, exactly as if typed into it. The plugin submits Enter automatically when the input does not already end with "\\r". Omit terminal_id to reuse the model\'s own sidebar terminal (opening one when needed). Dangerous commands (destructive deletes, privilege elevation, shutdown, force pushes, remote-code pipes, …) ask the user for confirmation first and are rejected unless confirmed. Writing never takes input control away from the sidebar view.',
     parameters: {
-      terminal_id: { type: 'string', required: true, description: 'Terminal id returned by side_terminal_list.' },
+      terminal_id: { type: 'string', description: 'Terminal id returned by side_terminal_list. Omit to reuse the model\'s own sidebar terminal or the first running one; a new terminal is opened when none is running.' },
       input: { type: 'string', required: true, description: 'Exact text to type, escape sequences included. End with "\\r" to submit like Enter.' },
       confirmed_by_user: { type: 'boolean', description: 'Set true ONLY after the user explicitly approved this exact command text in the conversation. Forgetting the confirmation asks again (fail-closed).' },
     },
@@ -572,11 +617,15 @@ export function apply(ctx, config = {}) {
     },
     async execute(args, exec) {
       const agent = requireAgent(exec)
-      const id = expectString(args.terminal_id, 'terminal_id')
-      if (id.length === 0) throw new Error('side_terminal_write: terminal_id must be a non-empty string')
       const input = expectString(args.input, 'input')
       if (input.length === 0) throw new Error('side_terminal_write: input must be a non-empty string')
       const clean = input.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
+      // Resolve the target: explicit id wins; without one, reuse the model's
+      // own retained terminal or open one. This is what lets terminal mode
+      // run commands without the model naming a terminal each time.
+      let id = typeof args.terminal_id === 'string' && args.terminal_id.length > 0
+        ? args.terminal_id
+        : await resolveDefaultTerminal(ctx, agent, exec.signal)
 
       // 1. Dangerous-command confirmation, before anything reaches the PTY.
       const match = dangerousMatch(clean, dangerous.list)

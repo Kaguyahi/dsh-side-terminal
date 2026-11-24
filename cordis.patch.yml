@@ -22,12 +22,14 @@
                 executed in the user's sidebar terminals through the
                 side_terminal_* tools (side_terminal_list / side_terminal_read /
                 side_terminal_write / side_terminal_open / side_terminal_close).
-                Never use the sandboxed `bash` or `pwsh` tools for commands in
-                this mode. The sidebar terminals run with the user's real
-                environment, not the file sandbox: prefer them only when the
-                user asked to operate that specific terminal, read the visible
-                screen with side_terminal_read, and send input with
-                side_terminal_write. Dangerous commands require explicit user
+                side_terminal_write accepts a plain command string and submits
+                Enter automatically; when terminal_id is omitted it reuses your
+                own sidebar terminal, opening one on first use. This is the ONLY
+                shell surface in this mode: never use the sandboxed `bash` or
+                `pwsh` tools for commands, and never ask the user to run a
+                command manually instead of using side_terminal_write. The
+                sidebar terminals run with the user's real environment, not the
+                file sandbox. Dangerous commands require explicit user
                 confirmation; never try to bypass it by splitting, encoding, or
                 quoting a command.
           - id: agent-instructions

@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const TAG = '[side-terminal]'
+
     // ------------------------------------------------------------------
     // 1. Status pill CSS: floating overlay instead of a layout row, so the
     //    terminal's last line stays visible whenever the host shows a
@@ -37,6 +38,7 @@ window.__ModuleLoader__.load({
       ].join('\n')
       document.head.appendChild(style)
     }
+
     // ------------------------------------------------------------------
     // 2. Terminal watcher with loud diagnostics: every silent-return
     //    branch logs WHY it bailed, so the next browser refresh shows us
@@ -52,6 +54,7 @@ window.__ModuleLoader__.load({
         let alive = true
         let timer
         const controller = new AbortController()
+
         const reconcile = async () => {
           if (!alive) return
           const sidebarRight = ctx.get('sidebarRight')
@@ -87,6 +90,7 @@ window.__ModuleLoader__.load({
             ? sidebarRight.tabsIn(sessionId)
             : []
           console.log(`${TAG} ui tabs`, tabs.map(tab => ({ id: tab.id, kind: tab.kind, contentId: tab.contentId })))
+
           const boundTerminalId = (tab) => {
             if (tab.kind !== 'terminal') return undefined
             // 1. Live navigation params: the opener's terminalId (works for
@@ -153,6 +157,7 @@ window.__ModuleLoader__.load({
             }
           }
         }
+
         const start = () => {
           void reconcile().finally(() => {
             if (!alive) return
@@ -168,6 +173,7 @@ window.__ModuleLoader__.load({
       }, [sessionId])
       return null
     }
+
     return {
       inject: ['slots', 'sidebarRight', 'remote.terminal', 'layout'],
       apply(ctx) {
