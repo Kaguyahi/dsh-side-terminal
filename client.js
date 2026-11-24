@@ -4,7 +4,6 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const TAG = '[side-terminal]'
-
     // ------------------------------------------------------------------
     // 1. Status pill CSS: floating overlay instead of a layout row, so the
     //    terminal's last line stays visible whenever the host shows a
@@ -38,7 +37,6 @@ window.__ModuleLoader__.load({
       ].join('\n')
       document.head.appendChild(style)
     }
-
     // ------------------------------------------------------------------
     // 2. Terminal watcher with loud diagnostics: every silent-return
     //    branch logs WHY it bailed, so the next browser refresh shows us
@@ -54,7 +52,6 @@ window.__ModuleLoader__.load({
         let alive = true
         let timer
         const controller = new AbortController()
-
         const reconcile = async () => {
           if (!alive) return
           const sidebarRight = ctx.get('sidebarRight')
@@ -90,18 +87,30 @@ window.__ModuleLoader__.load({
             ? sidebarRight.tabsIn(sessionId)
             : []
           console.log(`${TAG} ui tabs`, tabs.map(tab => ({ id: tab.id, kind: tab.kind, contentId: tab.contentId })))
-
           const boundTerminalId = (tab) => {
             if (tab.kind !== 'terminal') return undefined
+            // 1. Live navigation params: the opener's terminalId (works for
+            //    tabs opened in this page generation).
             try {
               const occurrence = sidebarRight.tabDomain?.occurrence?.(sessionId, { id: tab.id })
               const params = occurrence?.navigation?.getSnapshot?.()?.params
               if (params !== null && typeof params === 'object' && typeof params.terminalId === 'string') {
                 return params.terminalId
               }
-              console.warn(`${TAG} terminal tab without readable params`, { tabId: tab.id, params })
-            } catch (error) {
-              console.warn(`${TAG} occurrence read failed`, { tabId: tab.id, error: String(error) })
+            } catch {
+              // occurrence() throws until the tab record is reconciled.
+            }
+            // 2. Persisted binding: tabs restored from a saved layout carry
+            //    no params, but the terminal client saves contentId →
+            //    terminalId in localStorage under a stable prefix.
+            try {
+              const raw = localStorage.getItem(`dsh.terminal.binding.v1.${JSON.stringify([sessionId, tab.contentId])}`)
+              if (raw !== null) {
+                const value = JSON.parse(raw)
+                if (typeof value === 'string' && /^[\w-]{1,128}$/u.test(value)) return value
+              }
+            } catch {
+              // Storage unavailable; the tab simply stays unreconciled.
             }
             return undefined
           }
@@ -144,7 +153,6 @@ window.__ModuleLoader__.load({
             }
           }
         }
-
         const start = () => {
           void reconcile().finally(() => {
             if (!alive) return
@@ -160,7 +168,6 @@ window.__ModuleLoader__.load({
       }, [sessionId])
       return null
     }
-
     return {
       inject: ['slots', 'sidebarRight', 'remote.terminal', 'layout'],
       apply(ctx) {
